@@ -7,7 +7,7 @@ from fastapi_users.models import UD, BaseOAuthAccount
 from ormar.exceptions import NoMatch
 from pydantic import UUID4
 
-__version__ = "0.0.0"
+__version__ = "1.0.0"
 
 
 class OrmarBaseUserModel(ormar.Model):
