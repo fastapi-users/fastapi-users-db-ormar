@@ -73,6 +73,7 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
     async def create(self, user: UD) -> UD:
         oauth_accounts = getattr(user, "oauth_accounts", [])
         model = await self.model(**user.dict(exclude={"oauth_accounts"})).save()
+        await model.save_related()
         if oauth_accounts and self.oauth_account_model:
             await self._create_oauth_models(model=model, oauth_accounts=oauth_accounts)
         user_db = await self._get_user(id=user.id)
@@ -102,7 +103,7 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
             await self.oauth_account_model.objects.bulk_create(oauth_accounts_db)
 
     async def _get_db_user(self, **kwargs: Any) -> OrmarBaseUserModel:
-        query = self.model.objects.filter(**kwargs)
+        query = self.model.objects.select_all().filter(**kwargs)
         if self.oauth_account_model is not None:
             query = query.select_related("oauth_accounts")
         return cast(OrmarBaseUserModel, await query.get())
