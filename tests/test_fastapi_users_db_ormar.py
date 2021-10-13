@@ -79,6 +79,21 @@ async def ormar_user_db_oauth() -> AsyncGenerator[OrmarUserDatabase, None]:
     await database.disconnect()
 
 
+@pytest.fixture
+async def ormar_user_db_with_relations() -> AsyncGenerator[OrmarUserDatabase, None]:
+    engine = sqlalchemy.create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+    metadata.create_all(engine)
+
+    await database.connect()
+
+    yield OrmarUserDatabase(user_db_model=UserDB, model=User, select_related=['roles'])
+
+    metadata.drop_all(engine)
+    await database.disconnect()
+
+
 @pytest.mark.asyncio
 @pytest.mark.db
 async def test_queries(ormar_user_db: OrmarUserDatabase[UserDB]):
@@ -211,11 +226,13 @@ async def test_queries_oauth(
 
 @pytest.mark.asyncio
 @pytest.mark.db
-async def test_queries_custom_fields_relations(ormar_user_db: OrmarUserDatabase[UserDB]):
+async def test_queries_custom_fields_relations(
+    ormar_user_db_with_relations: OrmarUserDatabase[UserDB]
+    ):
     # Create role to pair with
     role = await Role.objects.create(
         id=uuid.uuid4(),
-        name='editor'
+        name="editor"
     )
 
     assert role.id is not None
@@ -227,7 +244,7 @@ async def test_queries_custom_fields_relations(ormar_user_db: OrmarUserDatabase[
     )
 
     # Create with relationship
-    user_db = await ormar_user_db.create(user)
+    user_db = await ormar_user_db_with_relations.create(user)
     assert user_db.roles is not None
     assert len(user_db.roles) is not 0
     assert user_db.roles[0].id == role.id
