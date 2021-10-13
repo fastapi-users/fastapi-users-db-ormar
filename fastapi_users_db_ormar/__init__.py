@@ -44,6 +44,7 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
     :param user_db_model: Pydantic model of a DB representation of a user.
     :param model: ormar ORM model.
     :param oauth_account_model: Optional ormar ORM model of a OAuth account.
+    :param select_related: Optional list of relationship names to retrieve with User queries.
     """
 
     model: Type[OrmarBaseUserModel]
@@ -54,10 +55,12 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
         user_db_model: Type[UD],
         model: Type[OrmarBaseUserModel],
         oauth_account_model: Optional[Type[OrmarBaseOAuthAccountModel]] = None,
+        select_related: Optional[List[str]] = None
     ):
         super().__init__(user_db_model)
         self.model = model
         self.oauth_account_model = oauth_account_model
+        self.select_related = select_related
 
     async def get(self, id: UUID4) -> Optional[UD]:
         return await self._get_user(id=id)
@@ -103,9 +106,12 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
             await self.oauth_account_model.objects.bulk_create(oauth_accounts_db)
 
     async def _get_db_user(self, **kwargs: Any) -> OrmarBaseUserModel:
-        query = self.model.objects.select_all().filter(**kwargs)
+        query = self.model.objects.filter(**kwargs)
         if self.oauth_account_model is not None:
             query = query.select_related("oauth_accounts")
+        if self.select_related is not None:
+            for relation in self.select_related:
+                query = query.select_related(relation)
         return cast(OrmarBaseUserModel, await query.get())
 
     async def _get_user(self, **kwargs: Any) -> Optional[UD]:
