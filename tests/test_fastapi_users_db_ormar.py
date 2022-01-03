@@ -20,12 +20,23 @@ metadata = sqlalchemy.MetaData()
 database = databases.Database(DATABASE_URL)
 
 
+class Role(ormar.Model):
+    class Meta:
+        tablename = "roles"
+        metadata = metadata
+        database = database
+
+    id = ormar.UUID(primary_key=True, uuid_format="string")
+    name = ormar.String(nullable=False, max_length=255)
+
+
 class User(OrmarBaseUserModel):
     class Meta:
         metadata = metadata
         database = database
 
     first_name = ormar.String(nullable=True, max_length=255)
+    roles = ormar.ManyToMany(Role, skip_reverse=True)
 
 
 class OAuthAccount(OrmarBaseOAuthAccountModel):
@@ -63,6 +74,21 @@ async def ormar_user_db_oauth() -> AsyncGenerator[OrmarUserDatabase, None]:
     yield OrmarUserDatabase(
         user_db_model=UserDBOAuth, model=User, oauth_account_model=OAuthAccount
     )
+
+    metadata.drop_all(engine)
+    await database.disconnect()
+
+
+@pytest.fixture
+async def ormar_user_db_with_relations() -> AsyncGenerator[OrmarUserDatabase, None]:
+    engine = sqlalchemy.create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+    metadata.create_all(engine)
+
+    await database.connect()
+
+    yield OrmarUserDatabase(user_db_model=UserDB, model=User, select_related=['roles'])
 
     metadata.drop_all(engine)
     await database.disconnect()
@@ -196,3 +222,29 @@ async def test_queries_oauth(
     # Unknown OAuth account
     unknown_oauth_user = await ormar_user_db_oauth.get_by_oauth_account("foo", "bar")
     assert unknown_oauth_user is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.db
+async def test_queries_custom_fields_relations(
+    ormar_user_db_with_relations: OrmarUserDatabase[UserDB]
+    ):
+    # Create role to pair with
+    role = await Role.objects.create(
+        id=uuid.uuid4(),
+        name="editor"
+    )
+
+    assert role.id is not None
+
+    user = UserDB(
+        email="lancelot@camelot.bt",
+        hashed_password="guinevere",
+        roles=[role]
+    )
+
+    # Create with relationship
+    user_db = await ormar_user_db_with_relations.create(user)
+    assert user_db.roles is not None
+    assert len(user_db.roles) is not 0
+    assert user_db.roles[0].id == role.id

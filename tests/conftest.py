@@ -1,16 +1,25 @@
+import uuid
 import asyncio
-from typing import Optional
+from typing import Optional, List
 
 import pytest
 from fastapi_users import models
+from pydantic import BaseModel, UUID4, Field
+
+
+class Role(BaseModel):
+    id: UUID4 = Field(default_factory=uuid.uuid4)
+    name: str
 
 
 class User(models.BaseUser):
     first_name: Optional[str]
+    roles: Optional[List[Role]]
 
 
 class UserCreate(models.BaseUserCreate):
     first_name: Optional[str]
+    roles: Optional[List[Role]]
 
 
 class UserUpdate(models.BaseUserUpdate):
