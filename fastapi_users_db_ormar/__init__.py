@@ -3,14 +3,15 @@ from typing import Any, List, Optional, Type, cast
 
 import ormar
 from fastapi_users.db.base import BaseUserDatabase
-from fastapi_users.models import UD, BaseOAuthAccount
+from fastapi_users.models import UP, ID
+from fastapi_users.schemas import BaseOAuthAccount
 from ormar.exceptions import NoMatch
 from pydantic import UUID4
 
 __version__ = "1.0.0"
 
 
-class OrmarBaseUserModel(ormar.Model):
+class OrmarBaseUserModel(Generic[UP], ormar.Model):
     class Meta:
         tablename = "users"
         abstract = True
@@ -37,14 +38,13 @@ class OrmarBaseOAuthAccountModel(ormar.Model):
     account_email = ormar.String(nullable=False, max_length=255)
 
 
-class OrmarUserDatabase(BaseUserDatabase[UD]):
+class OrmarUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     """
     Database adapter for ormar.
 
     :param user_db_model: Pydantic model of a DB representation of a user.
     :param model: ormar ORM model.
     :param oauth_account_model: Optional ormar ORM model of a OAuth account.
-    :param select_related: Optional list of relationship names to retrieve with User queries.
     """
 
     model: Type[OrmarBaseUserModel]
@@ -52,37 +52,34 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
 
     def __init__(
         self,
-        user_db_model: Type[UD],
+        user_db_model: Type[UP],
         model: Type[OrmarBaseUserModel],
         oauth_account_model: Optional[Type[OrmarBaseOAuthAccountModel]] = None,
-        select_related: Optional[List[str]] = None
     ):
         super().__init__(user_db_model)
         self.model = model
         self.oauth_account_model = oauth_account_model
-        self.select_related = select_related
 
-    async def get(self, id: UUID4) -> Optional[UD]:
+    async def get(self, id: UUID4) -> Optional[UP]:
         return await self._get_user(id=id)
 
-    async def get_by_email(self, email: str) -> Optional[UD]:
+    async def get_by_email(self, email: str) -> Optional[UP]:
         return await self._get_user(email__iexact=email)
 
-    async def get_by_oauth_account(self, oauth: str, account_id: str) -> Optional[UD]:
+    async def get_by_oauth_account(self, oauth: str, account_id: str) -> Optional[UP]:
         return await self._get_user(
             oauth_accounts__oauth_name=oauth, oauth_accounts__account_id=account_id
         )
 
-    async def create(self, user: UD) -> UD:
+    async def create(self, user: UP) -> UP:
         oauth_accounts = getattr(user, "oauth_accounts", [])
         model = await self.model(**user.dict(exclude={"oauth_accounts"})).save()
-        await model.save_related()
         if oauth_accounts and self.oauth_account_model:
             await self._create_oauth_models(model=model, oauth_accounts=oauth_accounts)
         user_db = await self._get_user(id=user.id)
-        return cast(UD, user_db)
+        return cast(UP, user_db)
 
-    async def update(self, user: UD) -> UD:
+    async def update(self, user: UP) -> UP:
         oauth_accounts = getattr(user, "oauth_accounts", [])
         model = await self._get_db_user(id=user.id)
         await model.update(**user.dict(exclude={"oauth_accounts"}))
@@ -90,9 +87,9 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
             await model.oauth_accounts.clear(keep_reversed=False)
             await self._create_oauth_models(model=model, oauth_accounts=oauth_accounts)
         user_db = await self._get_user(id=user.id)
-        return cast(UD, user_db)
+        return cast(UP, user_db)
 
-    async def delete(self, user: UD) -> None:
+    async def delete(self, user: UP) -> None:
         await self.model.objects.delete(id=user.id)
 
     async def _create_oauth_models(
@@ -109,12 +106,9 @@ class OrmarUserDatabase(BaseUserDatabase[UD]):
         query = self.model.objects.filter(**kwargs)
         if self.oauth_account_model is not None:
             query = query.select_related("oauth_accounts")
-        if self.select_related is not None:
-            for relation in self.select_related:
-                query = query.select_related(relation)
         return cast(OrmarBaseUserModel, await query.get())
 
-    async def _get_user(self, **kwargs: Any) -> Optional[UD]:
+    async def _get_user(self, **kwargs: Any) -> Optional[UP]:
         try:
             user = await self._get_db_user(**kwargs)
         except NoMatch:
