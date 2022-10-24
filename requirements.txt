@@ -1,2 +1,2 @@
 fastapi-users >= 6.1.2
-ormar[sqlite] >=0.10.16,<0.11.0
+ormar[sqlite] >=0.10.16,<0.13.0
